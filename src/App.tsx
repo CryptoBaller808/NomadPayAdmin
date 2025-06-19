@@ -1,565 +1,594 @@
 import React, { useState, useEffect } from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate, Link, useLocation } from 'react-router-dom';
-import { 
-  Users, 
-  CreditCard, 
-  BarChart3, 
-  Settings, 
-  Shield, 
-  Bell,
-  Search,
-  Filter,
-  Download,
-  Eye,
-  Edit,
-  Trash2,
-  Plus,
-  TrendingUp,
-  TrendingDown,
-  DollarSign,
-  Activity
-} from 'lucide-react';
 import './App.css';
 
 // Types
 interface User {
   id: string;
-  name: string;
   email: string;
-  status: 'active' | 'suspended' | 'pending';
-  balance: number;
-  joinDate: string;
-  lastActivity: string;
+  created_at: string;
+  status: string;
 }
 
 interface Transaction {
   id: string;
-  userId: string;
-  type: 'send' | 'receive' | 'deposit' | 'withdrawal';
   amount: number;
   currency: string;
-  status: 'completed' | 'pending' | 'failed';
-  timestamp: string;
-  description: string;
+  status: string;
+  created_at: string;
+  user_id: string;
 }
 
-interface DashboardStats {
-  totalUsers: number;
-  totalTransactions: number;
-  totalVolume: number;
-  activeUsers: number;
+interface Wallet {
+  user_id: string;
+  balance: string;
+  currency: string;
+  updated_at: string;
 }
 
-// Mock data
-const mockUsers: User[] = [
-  {
-    id: '1',
-    name: 'John Doe',
-    email: 'john@example.com',
-    status: 'active',
-    balance: 1250.75,
-    joinDate: '2024-01-15',
-    lastActivity: '2025-06-17'
-  },
-  {
-    id: '2',
-    name: 'Jane Smith',
-    email: 'jane@example.com',
-    status: 'active',
-    balance: 890.50,
-    joinDate: '2024-02-20',
-    lastActivity: '2025-06-16'
-  },
-  {
-    id: '3',
-    name: 'Bob Wilson',
-    email: 'bob@example.com',
-    status: 'suspended',
-    balance: 0.00,
-    joinDate: '2024-03-10',
-    lastActivity: '2025-06-10'
-  }
-];
+interface QRLog {
+  id: string;
+  user_id: string;
+  action: string;
+  created_at: string;
+}
 
-const mockTransactions: Transaction[] = [
-  {
-    id: 'tx1',
-    userId: '1',
-    type: 'send',
-    amount: 100.00,
-    currency: 'USD',
-    status: 'completed',
-    timestamp: '2025-06-17T10:30:00Z',
-    description: 'Payment to merchant'
-  },
-  {
-    id: 'tx2',
-    userId: '2',
-    type: 'receive',
-    amount: 250.00,
-    currency: 'EUR',
-    status: 'completed',
-    timestamp: '2025-06-17T09:15:00Z',
-    description: 'Freelance payment'
-  },
-  {
-    id: 'tx3',
-    userId: '1',
-    type: 'deposit',
-    amount: 500.00,
-    currency: 'USD',
-    status: 'pending',
-    timestamp: '2025-06-17T08:45:00Z',
-    description: 'Bank transfer'
-  }
-];
+interface SecurityLog {
+  id: string;
+  event_type: string;
+  ip_address: string;
+  severity: string;
+  created_at: string;
+}
 
-const mockStats: DashboardStats = {
-  totalUsers: 15420,
-  totalTransactions: 89650,
-  totalVolume: 2450000,
-  activeUsers: 8920
+interface AuditLog {
+  id: string;
+  admin_user: string;
+  action: string;
+  details: string;
+  created_at: string;
+}
+
+interface ApiResponse<T> {
+  success: boolean;
+  message?: string;
+  [key: string]: any;
+}
+
+// Configuration
+const API_BASE = process.env.REACT_APP_API_URL || 'https://nomadpay-api.onrender.com';
+const FALLBACK_API = 'https://58hpi8clpqvp.manus.space';
+
+// API utility
+class AdminApiClient {
+  private static getAuthToken(): string | null {
+    return localStorage.getItem('admin_token');
+  }
+
+  private static async makeRequest<T>(
+    endpoint: string, 
+    options: RequestInit = {}
+  ): Promise<ApiResponse<T>> {
+    const token = this.getAuthToken();
+    const headers: HeadersInit = {
+      'Content-Type': 'application/json',
+      ...options.headers,
+    };
+
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    // Try primary API first
+    try {
+      const response = await fetch(`${API_BASE}${endpoint}`, {
+        ...options,
+        headers,
+        timeout: 10000,
+      });
+
+      if (response.ok) {
+        return await response.json();
+      }
+
+      // If 401, try to refresh token
+      if (response.status === 401 && token) {
+        await this.refreshToken();
+        return this.makeRequest(endpoint, options);
+      }
+
+      throw new Error(`API Error: ${response.status}`);
+    } catch (error) {
+      console.warn('Primary API failed, trying fallback:', error);
+      
+      // Try fallback API
+      try {
+        const response = await fetch(`${FALLBACK_API}${endpoint}`, {
+          ...options,
+          headers,
+          timeout: 10000,
+        });
+
+        if (response.ok) {
+          return await response.json();
+        }
+
+        throw new Error(`Fallback API Error: ${response.status}`);
+      } catch (fallbackError) {
+        console.error('Both APIs failed:', fallbackError);
+        throw new Error('Service temporarily unavailable');
+      }
+    }
+  }
+
+  static async refreshToken(): Promise<boolean> {
+    try {
+      const response = await this.makeRequest<{ access_token: string }>('/api/auth/refresh', {
+        method: 'POST',
+      });
+
+      if (response.success && response.access_token) {
+        localStorage.setItem('admin_token', response.access_token);
+        return true;
+      }
+    } catch (error) {
+      console.error('Token refresh failed:', error);
+      this.logout();
+    }
+    return false;
+  }
+
+  static async login(email: string, password: string): Promise<ApiResponse<{ access_token: string }>> {
+    return this.makeRequest('/api/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ email, password }),
+    });
+  }
+
+  static async getUsers(): Promise<ApiResponse<{ users: User[] }>> {
+    return this.makeRequest('/api/admin/users');
+  }
+
+  static async getTransactions(): Promise<ApiResponse<{ transactions: Transaction[] }>> {
+    return this.makeRequest('/api/admin/transactions');
+  }
+
+  static async getWallets(): Promise<ApiResponse<{ wallets: Wallet[] }>> {
+    return this.makeRequest('/api/admin/wallets');
+  }
+
+  static async getQRLogs(): Promise<ApiResponse<{ qr_logs: QRLog[] }>> {
+    return this.makeRequest('/api/admin/qr-logs');
+  }
+
+  static async getSecurityLogs(): Promise<ApiResponse<{ security_logs: SecurityLog[] }>> {
+    return this.makeRequest('/api/admin/security-logs');
+  }
+
+  static async getAuditLogs(): Promise<ApiResponse<{ audit_logs: AuditLog[] }>> {
+    return this.makeRequest('/api/admin/audit-history');
+  }
+
+  static logout(): void {
+    localStorage.removeItem('admin_token');
+    // Call logout API
+    this.makeRequest('/api/auth/logout', { method: 'POST' }).catch(console.error);
+  }
+}
+
+// Utility functions
+const exportToCSV = (data: any[], filename: string) => {
+  if (!data || data.length === 0) return;
+  
+  const headers = Object.keys(data[0]);
+  const csvContent = [
+    headers.join(','),
+    ...data.map(row => headers.map(header => `"${row[header] || ''}"`).join(','))
+  ].join('\\n');
+  
+  const blob = new Blob([csvContent], { type: 'text/csv' });
+  const url = window.URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  window.URL.revokeObjectURL(url);
 };
 
 // Components
-const Sidebar: React.FC = () => {
-  const location = useLocation();
-  
-  const menuItems = [
-    { path: '/dashboard', icon: BarChart3, label: 'Dashboard' },
-    { path: '/users', icon: Users, label: 'Users' },
-    { path: '/transactions', icon: CreditCard, label: 'Transactions' },
-    { path: '/security', icon: Shield, label: 'Security' },
-    { path: '/settings', icon: Settings, label: 'Settings' }
+const LoadingSpinner: React.FC = () => (
+  <div className="loading" role="status" aria-live="polite">
+    <div className="spinner" aria-hidden="true"></div>
+    Loading...
+  </div>
+);
+
+const ErrorMessage: React.FC<{ message: string; onRetry?: () => void }> = ({ message, onRetry }) => (
+  <div className="error-state" role="alert">
+    <strong>Error:</strong> {message}
+    {onRetry && (
+      <button className="btn btn-secondary" onClick={onRetry} style={{ marginTop: '12px' }}>
+        Retry
+      </button>
+    )}
+  </div>
+);
+
+const DataTable: React.FC<{
+  data: any[];
+  columns: { key: string; label: string; format?: (value: any) => string }[];
+  onExport: () => void;
+  onRefresh: () => void;
+}> = ({ data, columns, onExport, onRefresh }) => {
+  if (!data || data.length === 0) {
+    return (
+      <div className="empty-state">
+        <p>No data available</p>
+        <small>Data will appear here when available</small>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <div className="table-actions">
+        <button className="btn btn-secondary" onClick={onRefresh}>
+          Refresh
+        </button>
+        <button className="btn btn-success" onClick={onExport}>
+          Export CSV
+        </button>
+      </div>
+      <div className="table-container">
+        <table className="data-table" role="table">
+          <thead>
+            <tr role="row">
+              {columns.map((col) => (
+                <th key={col.key} role="columnheader">
+                  {col.label}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {data.map((item, index) => (
+              <tr key={index} role="row">
+                {columns.map((col) => (
+                  <td key={col.key} role="cell">
+                    {col.format ? col.format(item[col.key]) : item[col.key] || 'N/A'}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+};
+
+const KPICard: React.FC<{ title: string; value: string | number; icon: string }> = ({ title, value, icon }) => (
+  <div className="kpi-card">
+    <div className="kpi-icon">{icon}</div>
+    <div className="kpi-content">
+      <div className="kpi-value">{value}</div>
+      <div className="kpi-title">{title}</div>
+    </div>
+  </div>
+);
+
+const AdminLogin: React.FC<{ onLogin: (token: string) => void }> = ({ onLogin }) => {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+    setLoading(true);
+
+    try {
+      const response = await AdminApiClient.login(email, password);
+      if (response.success && response.access_token) {
+        localStorage.setItem('admin_token', response.access_token);
+        onLogin(response.access_token);
+      } else {
+        setError(response.message || 'Login failed');
+      }
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'Login failed');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="login-container">
+      <div className="login-card">
+        <div className="login-header">
+          <div className="logo">
+            <div className="logo-icon">NP</div>
+            <span>NomadPay Admin</span>
+          </div>
+        </div>
+        <h2>Admin Login</h2>
+        {error && <ErrorMessage message={error} />}
+        <form onSubmit={handleSubmit}>
+          <div className="form-group">
+            <label className="form-label" htmlFor="email">Email</label>
+            <input
+              type="email"
+              id="email"
+              className="form-input"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              required
+              placeholder="Enter admin email"
+            />
+          </div>
+          <div className="form-group">
+            <label className="form-label" htmlFor="password">Password</label>
+            <input
+              type="password"
+              id="password"
+              className="form-input"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+              placeholder="Enter admin password"
+            />
+          </div>
+          <button type="submit" className="btn btn-primary" style={{ width: '100%' }} disabled={loading}>
+            {loading ? 'Logging in...' : 'Login'}
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+};
+
+const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout }) => {
+  const [users, setUsers] = useState<User[]>([]);
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [wallets, setWallets] = useState<Wallet[]>([]);
+  const [qrLogs, setQRLogs] = useState<QRLog[]>([]);
+  const [securityLogs, setSecurityLogs] = useState<SecurityLog[]>([]);
+  const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const loadData = async () => {
+    setLoading(true);
+    try {
+      const [usersRes, transactionsRes, walletsRes, qrRes, securityRes, auditRes] = await Promise.allSettled([
+        AdminApiClient.getUsers(),
+        AdminApiClient.getTransactions(),
+        AdminApiClient.getWallets(),
+        AdminApiClient.getQRLogs(),
+        AdminApiClient.getSecurityLogs(),
+        AdminApiClient.getAuditLogs(),
+      ]);
+
+      if (usersRes.status === 'fulfilled' && usersRes.value.success) {
+        setUsers(usersRes.value.users || []);
+      }
+      if (transactionsRes.status === 'fulfilled' && transactionsRes.value.success) {
+        setTransactions(transactionsRes.value.transactions || []);
+      }
+      if (walletsRes.status === 'fulfilled' && walletsRes.value.success) {
+        setWallets(walletsRes.value.wallets || []);
+      }
+      if (qrRes.status === 'fulfilled' && qrRes.value.success) {
+        setQRLogs(qrRes.value.qr_logs || []);
+      }
+      if (securityRes.status === 'fulfilled' && securityRes.value.success) {
+        setSecurityLogs(securityRes.value.security_logs || []);
+      }
+      if (auditRes.status === 'fulfilled' && auditRes.value.success) {
+        setAuditLogs(auditRes.value.audit_logs || []);
+      }
+    } catch (error) {
+      console.error('Failed to load data:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadData();
+    
+    // Auto-refresh every 30 seconds
+    const interval = setInterval(loadData, 30000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const totalVolume = transactions.reduce((sum, tx) => sum + (parseFloat(tx.amount.toString()) || 0), 0);
+
+  const userColumns = [
+    { key: 'id', label: 'ID' },
+    { key: 'email', label: 'Email' },
+    { key: 'created_at', label: 'Joined', format: (date: string) => new Date(date).toLocaleDateString() },
+    { key: 'status', label: 'Status' }
   ];
 
+  const transactionColumns = [
+    { key: 'id', label: 'ID' },
+    { key: 'amount', label: 'Amount', format: (amount: number) => `$${amount}` },
+    { key: 'currency', label: 'Currency' },
+    { key: 'status', label: 'Status' },
+    { key: 'created_at', label: 'Date', format: (date: string) => new Date(date).toLocaleDateString() }
+  ];
+
+  const walletColumns = [
+    { key: 'user_id', label: 'User ID' },
+    { key: 'balance', label: 'Balance', format: (balance: string) => `$${balance}` },
+    { key: 'currency', label: 'Currency' },
+    { key: 'updated_at', label: 'Last Updated', format: (date: string) => new Date(date).toLocaleDateString() }
+  ];
+
+  const qrColumns = [
+    { key: 'id', label: 'ID' },
+    { key: 'user_id', label: 'User' },
+    { key: 'action', label: 'Action' },
+    { key: 'created_at', label: 'Timestamp', format: (date: string) => new Date(date).toLocaleString() }
+  ];
+
+  const securityColumns = [
+    { key: 'id', label: 'ID' },
+    { key: 'event_type', label: 'Event Type' },
+    { key: 'ip_address', label: 'IP Address' },
+    { key: 'severity', label: 'Severity' },
+    { key: 'created_at', label: 'Timestamp', format: (date: string) => new Date(date).toLocaleString() }
+  ];
+
+  const auditColumns = [
+    { key: 'id', label: 'ID' },
+    { key: 'admin_user', label: 'Admin' },
+    { key: 'action', label: 'Action' },
+    { key: 'details', label: 'Details' },
+    { key: 'created_at', label: 'Timestamp', format: (date: string) => new Date(date).toLocaleString() }
+  ];
+
+  if (loading) {
+    return <LoadingSpinner />;
+  }
+
   return (
-    <div className="sidebar">
-      <div className="sidebar-header">
+    <div className="admin-dashboard">
+      {/* Header */}
+      <header className="dashboard-header">
         <div className="logo">
-          <CreditCard className="logo-icon" />
-          <span className="logo-text">NomadPay Admin</span>
+          <div className="logo-icon">NP</div>
+          <span>NomadPay Admin</span>
         </div>
-      </div>
-      
-      <nav className="sidebar-nav">
-        {menuItems.map((item) => {
-          const Icon = item.icon;
-          const isActive = location.pathname === item.path;
-          
-          return (
-            <Link
-              key={item.path}
-              to={item.path}
-              className={`nav-item ${isActive ? 'active' : ''}`}
-            >
-              <Icon className="nav-icon" />
-              <span className="nav-label">{item.label}</span>
-            </Link>
-          );
-        })}
-      </nav>
-    </div>
-  );
-};
-
-const Header: React.FC = () => {
-  return (
-    <header className="header">
-      <div className="header-left">
-        <h1 className="page-title">Admin Dashboard</h1>
-      </div>
-      
-      <div className="header-right">
-        <div className="search-box">
-          <Search className="search-icon" />
-          <input type="text" placeholder="Search..." className="search-input" />
+        <div className="header-actions">
+          <span className="status-badge">System Online</span>
+          <button className="btn btn-danger" onClick={onLogout}>
+            Logout
+          </button>
         </div>
-        
-        <button className="notification-btn">
-          <Bell className="notification-icon" />
-          <span className="notification-badge">3</span>
-        </button>
-        
-        <div className="admin-profile">
-          <div className="admin-avatar">A</div>
-          <span className="admin-name">Admin User</span>
-        </div>
-      </div>
-    </header>
-  );
-};
+      </header>
 
-const StatCard: React.FC<{ title: string; value: string; change: string; trend: 'up' | 'down' }> = ({ title, value, change, trend }) => {
-  const TrendIcon = trend === 'up' ? TrendingUp : TrendingDown;
-  
-  return (
-    <div className="stat-card">
-      <div className="stat-header">
-        <h3 className="stat-title">{title}</h3>
-        <DollarSign className="stat-icon" />
-      </div>
-      <div className="stat-value">{value}</div>
-      <div className={`stat-change ${trend}`}>
-        <TrendIcon className="trend-icon" />
-        <span>{change}</span>
-      </div>
-    </div>
-  );
-};
+      {/* KPI Overview */}
+      <section className="kpi-section">
+        <KPICard title="Total Users" value={users.length} icon="👥" />
+        <KPICard title="Transactions" value={transactions.length} icon="💳" />
+        <KPICard title="Volume" value={`$${totalVolume.toLocaleString()}`} icon="💰" />
+        <KPICard title="Security Events" value={securityLogs.length} icon="🔒" />
+      </section>
 
-const Dashboard: React.FC = () => {
-  return (
-    <div className="dashboard">
-      <div className="stats-grid">
-        <StatCard
-          title="Total Users"
-          value={mockStats.totalUsers.toLocaleString()}
-          change="+12.5%"
-          trend="up"
-        />
-        <StatCard
-          title="Total Transactions"
-          value={mockStats.totalTransactions.toLocaleString()}
-          change="+8.2%"
-          trend="up"
-        />
-        <StatCard
-          title="Total Volume"
-          value={`$${(mockStats.totalVolume / 1000000).toFixed(1)}M`}
-          change="+15.3%"
-          trend="up"
-        />
-        <StatCard
-          title="Active Users"
-          value={mockStats.activeUsers.toLocaleString()}
-          change="-2.1%"
-          trend="down"
-        />
-      </div>
-      
-      <div className="dashboard-content">
-        <div className="dashboard-section">
-          <h2 className="section-title">Recent Activity</h2>
-          <div className="activity-list">
-            {mockTransactions.slice(0, 5).map((tx) => (
-              <div key={tx.id} className="activity-item">
-                <div className="activity-icon">
-                  <Activity />
-                </div>
-                <div className="activity-details">
-                  <div className="activity-title">{tx.description}</div>
-                  <div className="activity-meta">
-                    {tx.type} • {tx.currency} {tx.amount} • {new Date(tx.timestamp).toLocaleDateString()}
-                  </div>
-                </div>
-                <div className={`activity-status ${tx.status}`}>
-                  {tx.status}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-        
-        <div className="dashboard-section">
-          <h2 className="section-title">Quick Actions</h2>
-          <div className="quick-actions">
-            <button className="action-btn primary">
-              <Plus className="btn-icon" />
-              Add User
-            </button>
-            <button className="action-btn secondary">
-              <Download className="btn-icon" />
-              Export Data
-            </button>
-            <button className="action-btn secondary">
-              <Shield className="btn-icon" />
-              Security Scan
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-const UsersPage: React.FC = () => {
-  const [users, setUsers] = useState<User[]>(mockUsers);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState<string>('all');
-
-  const filteredUsers = users.filter(user => {
-    const matchesSearch = user.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         user.email.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesStatus = statusFilter === 'all' || user.status === statusFilter;
-    return matchesSearch && matchesStatus;
-  });
-
-  return (
-    <div className="users-page">
-      <div className="page-header">
-        <h1 className="page-title">Users Management</h1>
-        <button className="btn primary">
-          <Plus className="btn-icon" />
-          Add User
-        </button>
-      </div>
-      
-      <div className="filters">
-        <div className="search-filter">
-          <Search className="filter-icon" />
-          <input
-            type="text"
-            placeholder="Search users..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="filter-input"
+      {/* Data Tables */}
+      <div className="dashboard-grid">
+        <section className="dashboard-card">
+          <h2 className="card-title">
+            <span className="card-icon">👥</span>
+            Users Management
+          </h2>
+          <DataTable
+            data={users}
+            columns={userColumns}
+            onExport={() => exportToCSV(users, 'nomadpay-users.csv')}
+            onRefresh={loadData}
           />
-        </div>
-        
-        <div className="status-filter">
-          <Filter className="filter-icon" />
-          <select
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-            className="filter-select"
-          >
-            <option value="all">All Status</option>
-            <option value="active">Active</option>
-            <option value="suspended">Suspended</option>
-            <option value="pending">Pending</option>
-          </select>
-        </div>
-        
-        <button className="btn secondary">
-          <Download className="btn-icon" />
-          Export
-        </button>
-      </div>
-      
-      <div className="users-table">
-        <table>
-          <thead>
-            <tr>
-              <th>User</th>
-              <th>Status</th>
-              <th>Balance</th>
-              <th>Join Date</th>
-              <th>Last Activity</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filteredUsers.map((user) => (
-              <tr key={user.id}>
-                <td>
-                  <div className="user-info">
-                    <div className="user-avatar">{user.name.charAt(0)}</div>
-                    <div className="user-details">
-                      <div className="user-name">{user.name}</div>
-                      <div className="user-email">{user.email}</div>
-                    </div>
-                  </div>
-                </td>
-                <td>
-                  <span className={`status-badge ${user.status}`}>
-                    {user.status}
-                  </span>
-                </td>
-                <td>${user.balance.toFixed(2)}</td>
-                <td>{new Date(user.joinDate).toLocaleDateString()}</td>
-                <td>{new Date(user.lastActivity).toLocaleDateString()}</td>
-                <td>
-                  <div className="action-buttons">
-                    <button className="action-btn">
-                      <Eye className="action-icon" />
-                    </button>
-                    <button className="action-btn">
-                      <Edit className="action-icon" />
-                    </button>
-                    <button className="action-btn danger">
-                      <Trash2 className="action-icon" />
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        </section>
+
+        <section className="dashboard-card">
+          <h2 className="card-title">
+            <span className="card-icon">💳</span>
+            Transactions
+          </h2>
+          <DataTable
+            data={transactions}
+            columns={transactionColumns}
+            onExport={() => exportToCSV(transactions, 'nomadpay-transactions.csv')}
+            onRefresh={loadData}
+          />
+        </section>
+
+        <section className="dashboard-card">
+          <h2 className="card-title">
+            <span className="card-icon">💰</span>
+            Wallet Balances
+          </h2>
+          <DataTable
+            data={wallets}
+            columns={walletColumns}
+            onExport={() => exportToCSV(wallets, 'nomadpay-wallets.csv')}
+            onRefresh={loadData}
+          />
+        </section>
+
+        <section className="dashboard-card">
+          <h2 className="card-title">
+            <span className="card-icon">📱</span>
+            QR Code Usage
+          </h2>
+          <DataTable
+            data={qrLogs}
+            columns={qrColumns}
+            onExport={() => exportToCSV(qrLogs, 'nomadpay-qr-logs.csv')}
+            onRefresh={loadData}
+          />
+        </section>
+
+        <section className="dashboard-card">
+          <h2 className="card-title">
+            <span className="card-icon">🔒</span>
+            Security Events
+          </h2>
+          <DataTable
+            data={securityLogs}
+            columns={securityColumns}
+            onExport={() => exportToCSV(securityLogs, 'nomadpay-security-logs.csv')}
+            onRefresh={loadData}
+          />
+        </section>
+
+        <section className="dashboard-card">
+          <h2 className="card-title">
+            <span className="card-icon">📋</span>
+            Audit Trail
+          </h2>
+          <DataTable
+            data={auditLogs}
+            columns={auditColumns}
+            onExport={() => exportToCSV(auditLogs, 'nomadpay-audit-trail.csv')}
+            onRefresh={loadData}
+          />
+        </section>
       </div>
     </div>
   );
 };
 
-const TransactionsPage: React.FC = () => {
-  const [transactions, setTransactions] = useState<Transaction[]>(mockTransactions);
-
-  return (
-    <div className="transactions-page">
-      <div className="page-header">
-        <h1 className="page-title">Transactions</h1>
-        <button className="btn secondary">
-          <Download className="btn-icon" />
-          Export
-        </button>
-      </div>
-      
-      <div className="transactions-table">
-        <table>
-          <thead>
-            <tr>
-              <th>Transaction ID</th>
-              <th>Type</th>
-              <th>Amount</th>
-              <th>Status</th>
-              <th>Date</th>
-              <th>Description</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {transactions.map((tx) => (
-              <tr key={tx.id}>
-                <td className="tx-id">{tx.id}</td>
-                <td>
-                  <span className={`type-badge ${tx.type}`}>
-                    {tx.type}
-                  </span>
-                </td>
-                <td>{tx.currency} {tx.amount}</td>
-                <td>
-                  <span className={`status-badge ${tx.status}`}>
-                    {tx.status}
-                  </span>
-                </td>
-                <td>{new Date(tx.timestamp).toLocaleDateString()}</td>
-                <td>{tx.description}</td>
-                <td>
-                  <div className="action-buttons">
-                    <button className="action-btn">
-                      <Eye className="action-icon" />
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-};
-
-const SecurityPage: React.FC = () => {
-  return (
-    <div className="security-page">
-      <div className="page-header">
-        <h1 className="page-title">Security & Compliance</h1>
-      </div>
-      
-      <div className="security-grid">
-        <div className="security-card">
-          <h3>Security Alerts</h3>
-          <div className="alert-list">
-            <div className="alert-item warning">
-              <Shield className="alert-icon" />
-              <div className="alert-content">
-                <div className="alert-title">Suspicious Login Detected</div>
-                <div className="alert-time">2 hours ago</div>
-              </div>
-            </div>
-            <div className="alert-item info">
-              <Shield className="alert-icon" />
-              <div className="alert-content">
-                <div className="alert-title">Security Scan Completed</div>
-                <div className="alert-time">6 hours ago</div>
-              </div>
-            </div>
-          </div>
-        </div>
-        
-        <div className="security-card">
-          <h3>System Status</h3>
-          <div className="status-list">
-            <div className="status-item">
-              <span className="status-label">API Security</span>
-              <span className="status-value good">Secure</span>
-            </div>
-            <div className="status-item">
-              <span className="status-label">Database Encryption</span>
-              <span className="status-value good">Active</span>
-            </div>
-            <div className="status-item">
-              <span className="status-label">2FA Coverage</span>
-              <span className="status-value warning">78%</span>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-const SettingsPage: React.FC = () => {
-  return (
-    <div className="settings-page">
-      <div className="page-header">
-        <h1 className="page-title">Settings</h1>
-      </div>
-      
-      <div className="settings-content">
-        <div className="settings-section">
-          <h3>General Settings</h3>
-          <div className="setting-item">
-            <label className="setting-label">Platform Name</label>
-            <input type="text" value="NomadPay" className="setting-input" />
-          </div>
-          <div className="setting-item">
-            <label className="setting-label">Support Email</label>
-            <input type="email" value="support@nomadpay.io" className="setting-input" />
-          </div>
-        </div>
-        
-        <div className="settings-section">
-          <h3>Security Settings</h3>
-          <div className="setting-item">
-            <label className="setting-label">
-              <input type="checkbox" checked className="setting-checkbox" />
-              Require 2FA for all users
-            </label>
-          </div>
-          <div className="setting-item">
-            <label className="setting-label">
-              <input type="checkbox" checked className="setting-checkbox" />
-              Enable login notifications
-            </label>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-};
-
+// Main App Component
 const App: React.FC = () => {
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+
+  useEffect(() => {
+    // Check for existing token on app load
+    const token = localStorage.getItem('admin_token');
+    if (token) {
+      setIsAuthenticated(true);
+    }
+  }, []);
+
+  const handleLogin = (token: string) => {
+    setIsAuthenticated(true);
+  };
+
+  const handleLogout = () => {
+    AdminApiClient.logout();
+    setIsAuthenticated(false);
+  };
+
   return (
-    <Router>
-      <div className="app">
-        <Sidebar />
-        <div className="main-content">
-          <Header />
-          <div className="content">
-            <Routes>
-              <Route path="/" element={<Navigate to="/dashboard" replace />} />
-              <Route path="/dashboard" element={<Dashboard />} />
-              <Route path="/users" element={<UsersPage />} />
-              <Route path="/transactions" element={<TransactionsPage />} />
-              <Route path="/security" element={<SecurityPage />} />
-              <Route path="/settings" element={<SettingsPage />} />
-            </Routes>
-          </div>
-        </div>
-      </div>
-    </Router>
+    <div className="App">
+      {isAuthenticated ? (
+        <AdminDashboard onLogout={handleLogout} />
+      ) : (
+        <AdminLogin onLogin={handleLogin} />
+      )}
+    </div>
   );
 };
 
