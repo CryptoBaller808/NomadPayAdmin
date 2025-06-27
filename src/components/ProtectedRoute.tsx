@@ -27,8 +27,11 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
         return;
       }
 
-      // Check if user has required role
-      if (!requiredRole.includes(user.role)) {
+      // Check if user has required role (case-insensitive)
+      const userRoleLower = user.role.toLowerCase();
+      const requiredRolesLower = requiredRole.map(role => role.toLowerCase());
+      
+      if (!requiredRolesLower.includes(userRoleLower)) {
         console.warn('Access denied: User does not have required role', {
           userRole: user.role,
           requiredRoles: requiredRole

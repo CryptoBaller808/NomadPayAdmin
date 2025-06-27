@@ -22,6 +22,8 @@ const Header: React.FC<HeaderProps> = ({ user, activeSection, onLogout }) => {
       case 'dashboard': return 'Dashboard Overview';
       case 'users': return 'User Management';
       case 'transactions': return 'Transaction Management';
+      case 'audit-logs': return 'Audit Logs';
+      case 'system': return 'System Health';
       case 'settings': return 'System Settings';
       default: return 'Admin Panel';
     }
@@ -32,6 +34,8 @@ const Header: React.FC<HeaderProps> = ({ user, activeSection, onLogout }) => {
       case 'dashboard': return '📊';
       case 'users': return '👥';
       case 'transactions': return '💳';
+      case 'audit-logs': return '🕵️';
+      case 'system': return '🩺';
       case 'settings': return '⚙️';
       default: return '🛡️';
     }
@@ -46,47 +50,23 @@ const Header: React.FC<HeaderProps> = ({ user, activeSection, onLogout }) => {
 
   return (
     <header className="admin-header">
-      <div className="header-left">
-        <div className="section-info">
-          <span className="section-icon">{getSectionIcon(activeSection)}</span>
-          <h1 className="section-title">{getSectionTitle(activeSection)}</h1>
-        </div>
+      <div className="admin-header-left">
+        <h1 className="admin-header-title">
+          <span style={{ marginRight: '10px' }}>{getSectionIcon(activeSection)}</span>
+          {getSectionTitle(activeSection)}
+        </h1>
       </div>
 
-      <div className="header-right">
-        <div className="admin-info">
-          <div 
-            className="admin-profile"
-            onClick={() => setShowDropdown(!showDropdown)}
-          >
-            <div className="admin-avatar">
-              <span>{user?.email?.charAt(0).toUpperCase() || 'A'}</span>
-            </div>
-            <div className="admin-details">
-              <span className="admin-email">{user?.email || 'admin@nomadpay.com'}</span>
-              <span className="admin-role">{user?.role || 'Admin'}</span>
-            </div>
-            <span className="dropdown-arrow">▼</span>
-          </div>
-
-          {showDropdown && (
-            <div className="admin-dropdown">
-              <div className="dropdown-item">
-                <span className="dropdown-icon">👤</span>
-                <span>Profile</span>
-              </div>
-              <div className="dropdown-item">
-                <span className="dropdown-icon">⚙️</span>
-                <span>Settings</span>
-              </div>
-              <div className="dropdown-divider"></div>
-              <div className="dropdown-item logout" onClick={handleLogout}>
-                <span className="dropdown-icon">🚪</span>
-                <span>Logout</span>
-              </div>
-            </div>
-          )}
+      <div className="admin-header-right">
+        <div className="admin-user-info">
+          <p className="admin-user-welcome">Welcome, {user?.email || 'admin@nomadpay.com'}</p>
+          <p className="admin-user-role">{user?.role || 'ADMIN'}</p>
         </div>
+        
+        <button className="admin-logout-btn" onClick={handleLogout}>
+          <span>🚪</span>
+          <span>Logout</span>
+        </button>
       </div>
     </header>
   );

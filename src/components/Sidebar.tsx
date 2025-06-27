@@ -64,11 +64,10 @@ const Sidebar: React.FC<SidebarProps> = ({
   return (
     <div className="sidebar">
       <div className="sidebar-header">
-        <div className="logo">
-          <span className="logo-icon">🌺</span>
-          <span className="logo-text">NomadPay</span>
+        <div className="sidebar-logo">
+          <span className="sidebar-logo-icon">🌺</span>
+          <span>NomadPay</span>
         </div>
-        <div className="admin-badge">Admin Panel</div>
         
         {/* Role Badge */}
         <div 
@@ -76,16 +75,16 @@ const Sidebar: React.FC<SidebarProps> = ({
           style={{ 
             backgroundColor: getRoleColor(userRole),
             color: 'white',
-            padding: '4px 8px',
+            padding: '6px 12px',
             borderRadius: '12px',
             fontSize: '12px',
             fontWeight: 'bold',
-            marginTop: '8px',
+            marginTop: '15px',
             textAlign: 'center',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            gap: '4px'
+            gap: '6px'
           }}
         >
           <span>{getRoleIcon(userRole)}</span>
@@ -95,14 +94,14 @@ const Sidebar: React.FC<SidebarProps> = ({
 
       <nav className="sidebar-nav">
         {menuItems.map((item) => (
-          <button
+          <div
             key={item.id}
-            className={`nav-item ${activeSection === item.id ? 'active' : ''}`}
+            className={`sidebar-nav-item ${activeSection === item.id ? 'active' : ''}`}
             onClick={() => onSectionChange(item.id)}
           >
-            <span className="nav-icon">{item.icon}</span>
-            <span className="nav-label">{item.label}</span>
-          </button>
+            <span className="sidebar-nav-icon">{item.icon}</span>
+            <span>{item.label}</span>
+          </div>
         ))}
         
         {/* Show disabled items for sections user doesn't have access to */}
@@ -111,23 +110,20 @@ const Sidebar: React.FC<SidebarProps> = ({
           .map((item) => (
             <div
               key={`disabled-${item.id}`}
-              className="nav-item disabled"
+              className="sidebar-nav-item"
+              style={{ opacity: 0.4, cursor: 'not-allowed' }}
               title={`Access denied - ${userRole} role required`}
             >
-              <span className="nav-icon" style={{ opacity: 0.3 }}>{item.icon}</span>
-              <span className="nav-label" style={{ opacity: 0.3 }}>{item.label}</span>
-              <span className="access-denied-icon">🔒</span>
+              <span className="sidebar-nav-icon">{item.icon}</span>
+              <span>{item.label}</span>
+              <span style={{ marginLeft: 'auto', fontSize: '12px' }}>🔒</span>
             </div>
           ))
         }
       </nav>
 
-      <div className="sidebar-footer">
-        <button className="logout-btn" onClick={handleLogout}>
-          <span className="nav-icon">🚪</span>
-          <span className="nav-label">Logout</span>
-        </button>
-      </div>
+      {/* Remove the sidebar footer logout button to prevent duplicate */}
+      {/* The logout button will be in the header only */}
     </div>
   );
 };

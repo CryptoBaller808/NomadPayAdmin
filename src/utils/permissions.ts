@@ -220,6 +220,7 @@ export const SECTION_REQUIREMENTS: Record<string, string[]> = {
   users: [PERMISSIONS.USERS_VIEW],
   transactions: [PERMISSIONS.TRANSACTIONS_VIEW],
   'audit-logs': [PERMISSIONS.AUDIT_LOGS_VIEW],
+  system: [PERMISSIONS.SYSTEM_VIEW],
   settings: [PERMISSIONS.SETTINGS_VIEW],
 };
 
